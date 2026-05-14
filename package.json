@@ -1,0 +1,9 @@
+{
+  "name": "fs-database-project",
+  "version": "1.0.0",
+  "description": "Pure Node.js File-Based Database",
+  "main": "src/cli.js",
+  "scripts": {
+    "test": "node src/benchmarks/index-performance.js"
+  }
+}
