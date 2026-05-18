@@ -1,0 +1,11 @@
+{
+  "id": "e0f177f4-6748-4d04-b818-f58707626cef",
+  "data": {
+    "name": "Alice",
+    "role": "super-admin"
+  },
+  "createdAt": 1778766962167,
+  "updatedAt": 1778766962196,
+  "deletedAt": 1778766962196,
+  "_version": 3
+}
