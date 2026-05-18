@@ -2,48 +2,69 @@ const path = require('path');
 const FileManager = require('../storage/file-manager');
 const CrudManager = require('./crud');
 const PartitionManager = require('./partitioning');
+const IndexingManager = require('./indexing');
+const IdempotencyManager = require('./idempotency');
+const TransactionManager = require('./transactions');
+const QueryEngine = require('./query'); // <-- Make sure this line is here!
 
 class Database {
     constructor(options = {}) {
-        // 1. Hire all our workers and give them their tools
-        this.fm = new FileManager(options.baseDir || './data');
+        const rootDataPath = options.baseDir || path.resolve(__dirname, '../../data');
+        
+        this.fm = new FileManager(rootDataPath);
         this.crud = new CrudManager(this.fm);
         this.partitioner = new PartitionManager(options.shards || 4);
+        this.indexer = new IndexingManager(this.fm);
+        this.idempotency = new IdempotencyManager(this.fm);
+        this.tx = new TransactionManager(this);
+        this.queryEngine = new QueryEngine(this.fm); // <-- Make sure this line is here!
     }
 
-    /**
-     * THE BOSS COMMAND FOR INSERTING DATA
-     */
-    async insert(collection, data) {
-        // 1. Generate a unique ID if the data doesn't have one
+    // 1. Normal Insert Command
+    async insert(collection, data, indexFields = []) {
         const id = data.id || require('crypto').randomUUID();
-
-        // 2. Call the Partition worker to calculate the right shard room name
         const shardName = this.partitioner.getShardName(id);
-        
-        // 3. Glue the collection name and room name together (e.g., "users/shard_2")
         const shardedCollectionPath = path.join(collection, shardName);
-
-        // 4. Send the data package to the CRUD worker, but tell them to save it 
-        // inside the specific sharded folder path!
         const record = await this.crud.insert(shardedCollectionPath, { ...data, id });
-        
+        for (const field of indexFields) {
+            if (data[field]) await this.indexer.updateIndex(collection, field, data[field], id);
+        }
         return record;
     }
 
-    /**
-     * THE BOSS COMMAND FOR READING DATA BY ID
-     */
+    // 2. Safe Insert Command (Idempotency)
+    async insertSafe(collection, idempotencyKey, data, indexFields = []) {
+        const isNew = await this.idempotency.processKey(idempotencyKey);
+        if (!isNew) {
+            console.log(`🛡️ Idempotency Guard: Blocked duplicate request for key [${idempotencyKey}]`);
+            return { status: "ignored", message: "Duplicate request prevented." };
+        }
+        console.log(`✅ Idempotency Guard: Approved new request [${idempotencyKey}]`);
+        const record = await this.insert(collection, data, indexFields);
+        return { status: "success", record };
+    }
+
+    // 3. Find by ID Command
     async findById(collection, id) {
-        // 1. Ask the Partition worker: "Where did we put this ID?"
         const shardName = this.partitioner.getShardName(id);
-        
-        // 2. Figure out the exact folder path where it lives
         const shardedCollectionPath = path.join(collection, shardName);
-        
-        // 3. Tell CRUD to go open that specific folder and pull out the file
         return await this.crud.findById(shardedCollectionPath, id);
     }
-}
+
+    // 4. Find by Index Command
+    async findByIndex(collection, field, value) {
+        const id = await this.indexer.lookup(collection, field, value);
+        if (!id) return null;
+        return await this.findById(collection, id);
+    }
+
+    /**
+     * 5. CRITICAL QUERY COMMAND: Make sure this is sitting right here 
+     * inside the class brackets before the final "module.exports"!
+     */
+    async find(collection, options) {
+        return await this.queryEngine.find(collection, options);
+    }
+} // <-- This brace closes the Database class
 
 module.exports = Database;

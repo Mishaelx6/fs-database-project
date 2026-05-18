@@ -1,4 +1,4 @@
-const FileManager = require('./file-manager');
+const FileManager = require('../storage/file-manager');
 const path = require('path');
 const assert = require('assert');
 
