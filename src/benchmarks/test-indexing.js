@@ -1,4 +1,4 @@
-const Database = require('../db/database');
+const Database = require('../../db/database');
 
 async function run() {
     const db = new Database();
